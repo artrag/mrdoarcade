@@ -141,8 +141,11 @@ SPRITE_NAME_TABLE:		RB	80	;EQU $70E9	; SAT
 BADGUY_BHVR_CNT_RAM:	RB	 1	;EQU $7139 ; HOW MANY BYTES IN TABLE
 BADGUY_BEHAVIOR_RAM:	RB	28	;EQU $713A ; BEHAVIOR TABLE. UP TO 7*4=28 ELEMENTS
 						RB 	52	; ??
-GAMESTATE:				RB 212	;EQU $718A ; Level (16x10) and game state (52 bytes) total 212 byte saved in VRAM
-						RB  16	;EQU $71A0 ; ??
+GAMESTATE:				RB 160	;EQU $718A ; Level (16x10) and game state (52 bytes) total 212 byte saved in VRAM
+						RB   2	;EQU $722A
+APPLEDATA:				RB  25	;EQU $722C ; Apple sprite data 5x5 bytes
+						RB  25	;EQU $7245
+						RB  16	;EQU $725E ; ??
 GAMECONTROL:			RB	 1	;EQU $726E ; GAME CONTROL BYTE (All bits have a meaning!) B0->1/2 Players
 GAMETIMER:				RB	 1	;EQU $726F  ??
 						RB	 1	; ??
@@ -645,7 +648,7 @@ LOC_8310:
 	LD		HL, DIAMOND_RAM
 	BIT		7, (HL)
 	RET		Z
-	LD		IX, $722C
+	LD		IX, APPLEDATA
 	LD		B, (IX+1)
 	LD		C, (IX+2)
 	LD		D, 0
@@ -719,7 +722,7 @@ LOC_8378:
 	JR		NZ, LOC_83AB
 	CALL	SUB_9842
 	CP		1
-	JR		Z, LOC_83AB
+	JR		Z, LOC_83AB		; if Z MrDo collided an enemy
 	AND		A
 	JR		NZ, LOC_83CB
 	CALL	SUB_A53E
@@ -728,18 +731,23 @@ LOC_8378:
 	CP		1
 	JR		NZ, LOC_83CB
 LOC_83AB:
-	LD		IX, $722C		; apple data array
-	LD		B, 5			; apple nember
-LOOP_83B1:
+
+	; animate here the MrDo death
+	CALL MrDoDeathSequence
+
+LOC_83ABX:
+	LD		IX, APPLEDATA		; apple data array
+	LD		B, 5				; apple number
+LOOP_83B1:						; MrDo is dead, let apples fall if any
 	BIT		3, (IX+0)
-	JR		NZ, LOC_83C0
+	JR		NZ, LOC_83C0		; if this apple is falling make it fall
 	LD		DE, 5
 	ADD		IX, DE
 	DJNZ	LOOP_83B1
 	JR		LOC_83C5
 LOC_83C0:
 	CALL	DEAL_WITH_APPLE_FALLING
-	JR		LOC_83AB
+	JR		LOC_83ABX
 LOC_83C5:
 	AND A	; CP		0
 	JR		NZ, LOC_83CB
@@ -750,7 +758,33 @@ LOC_83CB:
 	JR		Z, LOC_8372
 	JR		LOC_8375
 
-
+MrDoDeathSequence:
+	push 	af
+	ld	b,4
+.nextframe:
+	push	bc
+	LD		HL, 12
+	XOR		A
+	CALL	REQUEST_SIGNAL
+	PUSH	AF
+.wait:
+	POP		AF
+	PUSH	AF
+	CALL	TEST_SIGNAL
+	AND		A
+	JR		Z, .wait
+	POP		AF
+	pop 	BC
+	ld		E,B
+	push bc 
+	ld		a,28+48+4
+	sub a,E
+	LD		IY, 8				; number of 8x8 tiles to process (8 <=> 2 layers)
+	CALL	DEAL_WITH_SPRITES	; rotate the current frame of the player
+	pop  bc
+	djnz  .nextframe
+	pop 	af
+ret
 
 INIT_VRAM:
 	LD		BC, 0
@@ -1210,7 +1244,7 @@ LOC_87B9:
 	LD		A, 3
 	CALL	DEAL_WITH_PLAYFIELD
 	LD		B, 5
-	LD		IY, $722C
+	LD		IY, APPLEDATA
 	LD		A, 0CH
 LOOP_87C6:
 	BIT		7, (IY+0)
@@ -1348,7 +1382,15 @@ LOC_88B6:
 RET
 
 DEAL_WITH_APPLE_FALLING:
-	CALL	LEADS_TO_FALLING_APPLE_03
+	LD		IY, APPLEDATA
+	LD		HL, BYTE_896C
+	LD		A, ($722A)
+	LD		C, A
+	LD		B, 0
+	ADD		HL, BC
+	LD		C, (HL)
+	ADD		IY, BC
+
 	XOR		A
 	BIT		7, (IY+0)
 	JR		Z, LEADS_TO_FALLING_APPLE_04
@@ -1424,16 +1466,6 @@ LOC_8954:
 	AND		A
 RET
 
-LEADS_TO_FALLING_APPLE_03:
-	LD		IY, $722C
-	LD		HL, BYTE_896C
-	LD		A, ($722A)
-	LD		C, A
-	LD		B, 0
-	ADD		HL, BC
-	LD		C, (HL)
-	ADD		IY, BC
-RET
 
 BYTE_896C:
 	DB 000,005,010,015,020,025
@@ -1522,7 +1554,7 @@ DEAL_WITH_RANDOM_DIAMOND:
 	JR		NC, LOC_8A2E
 	LD		B, (IY+1)
 	LD		C, (IY+2)
-	LD		IX, $722C
+	LD		IX, APPLEDATA
 	LD		(IX+1), B
 	LD		(IX+2), C
 	LD		A, 80H
@@ -1536,7 +1568,7 @@ SUB_8A31:
 	PUSH	BC
 	PUSH	DE
 	PUSH	IX
-	LD		IX, $722C
+	LD		IX, APPLEDATA
 	LD		B, 5
 	LD		C, 0
 	LD		DE, 5
@@ -1940,7 +1972,7 @@ LOC_8D21:
 RET
 
 SUB_8D25:
-	LD		IX, $722C
+	LD		IX, APPLEDATA
 	LD		BC, 0
 LOC_8D2C:
 	LD		A, ($722A)
@@ -2047,7 +2079,7 @@ LOST_A_LIFE:
 	BIT		7, (IY+4)
 	JR		Z, LOC_8E05
 	PUSH	IY
-	CALL	PLAY_LOSE_LIFE_SOUND		; XXX DEATH SEQUENCE HERE ?
+	CALL	PLAY_LOSE_LIFE_SOUND		; smashed no DEATH SEQUENCE HERE 
 	POP		IY
 	LD		L, 1
 LOC_8E05:
@@ -2457,7 +2489,7 @@ RET
 
 SUB_9099:
 	LD		DE, 0
-	LD		IX, $722C
+	LD		IX, APPLEDATA
 	LD		B, 5
 LOC_90A2:
 	BIT		7, (IX+0)
@@ -3434,7 +3466,7 @@ SUB_9807:
 	LD		A, (DIAMOND_RAM)
 	BIT		7, A
 	JR		Z, LOC_983F
-	LD		IX, 722CH
+	LD		IX, APPLEDATA
 	LD		B, (IX+1)
 	LD		C, (IX+2)
 	LD		A, (IY+3)
@@ -3463,7 +3495,7 @@ LOC_983F:
 	XOR		A
 RET
 
-SUB_9842:
+SUB_9842:						; TEST MRDO COLLISION AGAINS ENEMIES
 	LD		A, ($7272)
 	BIT		4, A
 	JR		Z, LOC_98A2
@@ -3530,7 +3562,7 @@ LOC_98C2:
 	LD		($728C), A
 LOC_98CB:
 	LD		A, L
-	AND		A
+	AND		A				; return L=A=1 if collison
 RET
 
 SUB_98CE:
@@ -4581,7 +4613,7 @@ LOC_9FD5:
 LOC_9FE6:
 	CP		5
 	JR		NC, LOC_9FEF
-	CALL	PLAY_LOSE_LIFE_SOUND		; XXX DEATH SEQUENCE HERE ?
+	CALL	PLAY_LOSE_LIFE_SOUND		; XXX DEATH SEQUENCE HERE 
 	LD		L, 1
 LOC_9FEF:
 	POP		IY
@@ -5192,7 +5224,7 @@ SUB_A382:
 	CALL	SUB_ABB7
 	POP		DE
 	LD		L, 5
-	LD		IY, $722C
+	LD		IY, APPLEDATA
 LOC_A394:
 	BIT		7, (IY+0)
 	JR		Z, LOC_A3EE
@@ -5267,7 +5299,7 @@ SUB_A402:
 	LD		B, (IY+2)
 	LD		C, (IY+1)
 	LD		L, 5
-	LD		IX, $722C
+	LD		IX, APPLEDATA
 LOC_A412:
 	BIT		7, (IX+0)
 	JR		Z, LOC_A44D
@@ -5382,7 +5414,7 @@ LOC_A4C8:
 	SUB		10H
 LOC_A4CC:
 	LD		C, A
-	LD		IX, $722C
+	LD		IX, APPLEDATA
 	LD		L, 5
 LOC_A4D3:
 	BIT		7, (IX+0)
@@ -6972,7 +7004,7 @@ LOC_AEF1:
 LOC_AEF6:
 	LD		C, A
 	LD		E, 5
-	LD		IX, $722C
+	LD		IX, APPLEDATA
 LOC_AEFD:
 	BIT		7, (IX+0)
 	JR		Z, LOC_AF1A
@@ -7136,7 +7168,7 @@ LOC_B006:
 	ADD		A, 0CH
 LOC_B008:
 	LD		C, A
-	LD		IX, $722C
+	LD		IX, APPLEDATA
 	LD		E, 5
 LOC_B00F:
 	BIT		7, (IX+0)
@@ -7313,7 +7345,7 @@ LOC_B128:
 RET
 
 SUB_B12D: ; Mr. Do sprite intersection with apples from above and below
-	LD		IX, $722C	; IX points to the first apple's sprite data
+	LD		IX, APPLEDATA	; IX points to the first apple's sprite data
 	LD		E, 5		; Number of apples to check
 	; Modified to offset the value used to detect a vertical collision
 	; with an apple so that Mr. Do doesn't get stuck in the apple from
@@ -7549,7 +7581,7 @@ LOC_B2CC:
 	LD		L, (IX+0)
 	LD		H, (IX+1)
 	LD		B, 5
-	LD		IY, $722C
+	LD		IY, APPLEDATA
 LOOP_B2DB:
 	LD		A, (HL)
 	PUSH	HL
